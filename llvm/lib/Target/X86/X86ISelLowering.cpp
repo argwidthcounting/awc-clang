@@ -27459,7 +27459,7 @@ SDValue X86TargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   // Store gp_offset
   SDValue Store = DAG.getStore(
       Op.getOperand(0), DL,
-      DAG.getConstant(FuncInfo->getVarArgsGPOffset()+8, DL, MVT::i32), FIN, // AWC CHANGE - Add 8, skip first vararg (which is actually the size)
+      DAG.getConstant(FuncInfo->getVarArgsGPOffset(), DL, MVT::i32), FIN, // AWC CHANGE - Add 8, skip first vararg (which is actually the size)
       MachinePointerInfo(SV));
   MemOps.push_back(Store);
 
@@ -27491,23 +27491,28 @@ SDValue X86TargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   FIN = DAG.getNode(ISD::ADD, DL, PtrVT, FIN, DAG.getIntPtrConstant(
       Subtarget.isTarget64BitLP64() ? 8 : 4, DL));
     
-  //OVFIN + offset contains the first arg, which is vararg size
-  Store = DAG.getMemcpy(
-      Op.getOperand(0), 
-      DL, 
-      FIN, 
-      DAG.getNode(ISD::ADD, DL, PtrVT, RSFIN, DAG.getIntPtrConstant(FuncInfo->getVarArgsGPOffset(), DL)), 
-      DAG.getIntPtrConstant(8, DL),
-      Align(8), 
-      /*isVolatile*/ false, 
-      false,
-      false, 
-      MachinePointerInfo(SV, 8), 
-      MachinePointerInfo(SV, 8));
-  MemOps.push_back(Store);
-  // AWC CHANGE END
+  auto Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, MemOps);
 
-  return DAG.getNode(ISD::TokenFactor, DL, MVT::Other, MemOps);
+  SDValue InstOps[] = {Chain, Op.getOperand(1),
+                       DAG.getTargetConstant(8, DL, MVT::i32),
+                       DAG.getTargetConstant(1, DL, MVT::i8),
+                       DAG.getTargetConstant(8, DL, MVT::i32)};
+  SDVTList VTs = DAG.getVTList(getPointerTy(DAG.getDataLayout()), MVT::Other);
+  SDValue VAARG = DAG.getMemIntrinsicNode(
+      Subtarget.isTarget64BitLP64() ? X86ISD::VAARG_64 : X86ISD::VAARG_X32, DL,
+      VTs, InstOps, MVT::i64, MachinePointerInfo(SV),
+      /*Alignment=*/std::nullopt,
+      MachineMemOperand::MOLoad | MachineMemOperand::MOStore);
+  Chain = VAARG.getValue(1);
+
+  Store = DAG.getStore(
+    Chain, DL, 
+    DAG.getLoad(EVT(MVT::i64), DL, Chain, VAARG, MachinePointerInfo()), 
+    FIN,
+    MachinePointerInfo(SV));
+
+  return Store;
+  // AWC CHANGE END
 }
 
 SDValue X86TargetLowering::LowerVAARG(SDValue Op, SelectionDAG &DAG) const {
