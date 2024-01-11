@@ -27459,7 +27459,7 @@ SDValue X86TargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   // Store gp_offset
   SDValue Store = DAG.getStore(
       Op.getOperand(0), DL,
-      DAG.getConstant(FuncInfo->getVarArgsGPOffset(), DL, MVT::i32), FIN,
+      DAG.getConstant(FuncInfo->getVarArgsGPOffset()+8, DL, MVT::i32), FIN, // AWC CHANGE - Add 8, skip first vararg (which is actually the size)
       MachinePointerInfo(SV));
   MemOps.push_back(Store);
 
@@ -27486,6 +27486,27 @@ SDValue X86TargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
       Op.getOperand(0), DL, RSFIN, FIN,
       MachinePointerInfo(SV, Subtarget.isTarget64BitLP64() ? 16 : 12));
   MemOps.push_back(Store);
+
+  // AWC CHANGE - Store remaining, which is located as the first vararg
+  FIN = DAG.getNode(ISD::ADD, DL, PtrVT, FIN, DAG.getIntPtrConstant(
+      Subtarget.isTarget64BitLP64() ? 8 : 4, DL));
+    
+  //OVFIN + offset contains the first arg, which is vararg size
+  Store = DAG.getMemcpy(
+      Op.getOperand(0), 
+      DL, 
+      FIN, 
+      DAG.getNode(ISD::ADD, DL, PtrVT, RSFIN, DAG.getIntPtrConstant(FuncInfo->getVarArgsGPOffset(), DL)), 
+      DAG.getIntPtrConstant(8, DL),
+      Align(8), 
+      /*isVolatile*/ false, 
+      false,
+      false, 
+      MachinePointerInfo(SV, 8), 
+      MachinePointerInfo(SV, 8));
+  MemOps.push_back(Store);
+  // AWC CHANGE END
+
   return DAG.getNode(ISD::TokenFactor, DL, MVT::Other, MemOps);
 }
 
@@ -27566,7 +27587,7 @@ static SDValue LowerVACOPY(SDValue Op, const X86Subtarget &Subtarget,
 
   return DAG.getMemcpy(
       Chain, DL, DstPtr, SrcPtr,
-      DAG.getIntPtrConstant(Subtarget.isTarget64BitLP64() ? 24 : 16, DL),
+      DAG.getIntPtrConstant(Subtarget.isTarget64BitLP64() ? 24+8 : 16+8, DL),  // AWC CHANGE - Add 8 to account for new remaining val
       Align(Subtarget.isTarget64BitLP64() ? 8 : 4), /*isVolatile*/ false, false,
       false, MachinePointerInfo(DstSV), MachinePointerInfo(SrcSV));
 }

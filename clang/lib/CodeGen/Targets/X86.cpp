@@ -2991,6 +2991,43 @@ Address X86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   ABIArgInfo AI = classifyArgumentType(Ty, 0, neededInt, neededSSE,
                                        /*isNamedArg*/false);
 
+  // AWC CHANGE - Load, decrement, and check the remaining value before retrieving va_arg 
+  //Load the remaining value
+  Address remaining_p = Address::invalid();
+  llvm::Value *remaining = nullptr;
+  remaining_p = CGF.Builder.CreateStructGEP(VAListAddr, 4, "remaining_p");
+  remaining = CGF.Builder.CreateLoad(remaining_p, "remaining");
+  
+  //Handle edge case where a char is passed
+  // Note that requesting a char is actually undefined behavior - see warning when compiling va_arg(l, char)
+  // Treating it as an int seems to be most reliable action
+  std::string c = "char";
+  if(Ty.getAsString().compare(c) == 0){  //Find a better way to do this
+    // Promotable type char is 1 byte, but gets promoted to 4
+    // TODO: Are there other promoted types? Is there a already a way to get this in LLVM?
+    remaining = CGF.Builder.CreateSub(remaining, llvm::ConstantInt::get(CGF.Int64Ty, 4), "sub_remaining");
+  }
+  else{
+    remaining = CGF.Builder.CreateSub(remaining, CGF.getTypeSize(Ty), "sub_remaining");
+  }
+  CGF.Builder.CreateStore(remaining, remaining_p);
+
+  llvm::Value *RemainingValid = nullptr;
+  llvm::Value *RemainingValidAnd = nullptr;
+
+  //Check that remaining is not negative
+  RemainingValidAnd = CGF.Builder.CreateAnd(remaining, llvm::ConstantInt::get(CGF.Int64Ty, 0x8000000000000000), "and_remaining");
+  RemainingValid = CGF.Builder.CreateICmpEQ(RemainingValidAnd, llvm::ConstantInt::get(CGF.Int64Ty, 0), "remaining_eq_0");
+  
+  llvm::BasicBlock *RemainingBlock = CGF.createBasicBlock("vaarg.remaining");
+  llvm::BasicBlock *NoneRemainingBlock = CGF.createBasicBlock("vaarg.none_remaining");
+
+  CGF.Builder.CreateCondBr(RemainingValid, RemainingBlock, NoneRemainingBlock);
+  CGF.EmitBlock(NoneRemainingBlock);  // va_arg out of bounds, call terminate
+  CGF.EmitNounwindRuntimeCall(CGF.CGM.getTerminateFn());
+  CGF.EmitBlock(RemainingBlock); // In bounds, continue as usual
+  // AWC CHANGE END
+
   // AMD64-ABI 3.5.7p5: Step 1. Determine whether type may be passed
   // in the registers. If not go to step 7.
   if (!neededInt && !neededSSE)

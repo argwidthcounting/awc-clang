@@ -4415,8 +4415,16 @@ void CodeGenFunction::EmitCallArgs(
   }
 
   // If we still have any arguments, emit them using the type of the argument.
-  for (auto *A : llvm::drop_begin(ArgRange, ArgTypes.size()))
-    ArgTypes.push_back(IsVariadic ? getVarArgType(A) : A->getType());
+  // AWC CHANGE - Find the size of all variadic args
+  size_t numNonVariadic = ArgTypes.size(); // Record number of non-variadic args
+  uint64_t argsSize = 0;  //Total size of variadic args
+  for (auto *A : llvm::drop_begin(ArgRange, ArgTypes.size())){
+    auto argType = IsVariadic ? getVarArgType(A) : A->getType();
+    ArgTypes.push_back(argType);
+
+    argsSize += getContext().getTypeSize(argType) / 8; //It's in bits, convert to bytes
+  }
+  // AWC CHANGE END
   assert((int)ArgTypes.size() == (ArgRange.end() - ArgRange.begin()));
 
   // We must evaluate arguments from right to left in the MS C++ ABI,
@@ -4489,6 +4497,13 @@ void CodeGenFunction::EmitCallArgs(
       // regardless of right-to-leftness
       MaybeEmitImplicitObjectSize(Idx, *Arg, RVArg);
     }
+
+    // AWC CHANGE - If finished with non-variadic args, inject width as "first" vararg
+    if(IsVariadic && I == (numNonVariadic-1)){
+      auto a = llvm::ConstantInt::get(Int64Ty, argsSize);
+      Args.add(RValue::get(a), CGM.getContext().getSignedSizeType());
+    }
+    // AWC CHANGE END
   }
 
   if (!LeftToRight) {
