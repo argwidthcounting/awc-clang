@@ -1,5 +1,5 @@
 cd build
-ninja clang
+make clang
 cd ../build-libc
-ninja clean && ninja
+make clean && make
 cd ..
