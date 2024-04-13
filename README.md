@@ -1,5 +1,9 @@
 # Argument Width Counting
 
+
+***SEE [https://github.com/Ktrio3/awc-clang](https://github.com/Ktrio3/awc-clang) FOR ANY POTENTIAL UPDATES*** This is an old anonymized repo used for double-blind review.
+
+
 Argument Width Counting (AWC) is a new memory access-control policy that, when enforced, prevents all observed variadic-function attacks, including format-string attacks. AWC tracks the initial width or size of variadic arguments allocated on the stack and requires that variadic functions cannot request more bytes than initially allocated. When enforced, this policy limits variadic functions to the segments of memory allocated to the variadic arguments.
 
 AWC requires that the variadic functions only access X bytes off the stack, where X is the number of bytes pushed to the stack as variadic arguments during the function call. This differentiates it from argument counting, which counts the number of arguments, rather than their width. That is, AWC tracks the total size of all variadic arguments rather than the number of arguments. For example, if a variadic function call pushes 3 integers, than the width is 3 ints * 4 bytes each = 12 bytes total. Calls to va_arg may only access a total of 12 bytes; if the program attempts to access more than 12 bytes  accessed, the program is terminated. For a more detailed description with more complex examples, please refer to the original paper. TODO: Add link to paper once released
